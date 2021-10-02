@@ -48,6 +48,13 @@ RobotBodyFilter<T>::RobotBodyFilter() : privateNodeHandle("~") {
 
 template<typename T>
 bool RobotBodyFilter<T>::configure() {
+  
+  std::string name = filters::FilterBase<T>::getName();
+  auto nh = ros::NodeHandle("~" + name + "/params/body_model/inflation");
+  this->server_ = std::make_unique<dynamic_reconfigure::Server<RobotBodyFilterConfig>>(this->config_mutex_, nh);
+  this->dyn_reconf_cb_ = boost::bind(&RobotBodyFilter<T>::parameterReconfigureCallback, this, _1, _2);
+  this->server_->setCallback(this->dyn_reconf_cb_);
+
   this->tfBufferLength = this->getParamVerbose("transforms/buffer_length", ros::Duration(60.0), "s");
 
   if (this->tfBuffer == nullptr)
@@ -112,84 +119,9 @@ bool RobotBodyFilter<T>::configure() {
   this->defaultBsphereInflation.scale = this->getParamVerbose("body_model/inflation/bounding_sphere/scale", inflationScale);
   this->defaultBboxInflation.padding = this->getParamVerbose("body_model/inflation/bounding_box/padding", inflationPadding, "m");
   this->defaultBboxInflation.scale = this->getParamVerbose("body_model/inflation/bounding_box/scale", inflationScale);
-
-  // read per-link padding
-  const auto perLinkInflationPadding = this->getParamVerboseMap("body_model/inflation/per_link/padding", std::map<std::string, double>(), "m");
-  for (const auto& inflationPair : perLinkInflationPadding)
-  {
-    bool containsOnly;
-    bool shadowOnly;
-    bool bsphereOnly;
-    bool bboxOnly;
-
-    auto linkName = inflationPair.first;
-    linkName = removeSuffix(linkName, CONTAINS_SUFFIX, &containsOnly);
-    linkName = removeSuffix(linkName, SHADOW_SUFFIX, &shadowOnly);
-    linkName = removeSuffix(linkName, BSPHERE_SUFFIX, &bsphereOnly);
-    linkName = removeSuffix(linkName, BBOX_SUFFIX, &bboxOnly);
-
-    if (!shadowOnly && !bsphereOnly && !bboxOnly)
-      this->perLinkContainsInflation[linkName] =
-          ScaleAndPadding(this->defaultContainsInflation.scale, inflationPair.second);
-    if (!containsOnly && !bsphereOnly && !bboxOnly)
-      this->perLinkShadowInflation[linkName] =
-          ScaleAndPadding(this->defaultShadowInflation.scale, inflationPair.second);
-    if (!containsOnly && !shadowOnly && !bboxOnly)
-      this->perLinkBsphereInflation[linkName] =
-          ScaleAndPadding(this->defaultBsphereInflation.scale, inflationPair.second);
-    if (!containsOnly && !shadowOnly && !bsphereOnly)
-      this->perLinkBboxInflation[linkName] =
-          ScaleAndPadding(this->defaultBboxInflation.scale, inflationPair.second);
-  }
-
-  // read per-link scale
-  const auto perLinkInflationScale = this->getParamVerboseMap("body_model/inflation/per_link/scale", std::map<std::string, double>());
-  for (const auto& inflationPair : perLinkInflationScale)
-  {
-    bool containsOnly;
-    bool shadowOnly;
-    bool bsphereOnly;
-    bool bboxOnly;
-
-    auto linkName = inflationPair.first;
-    linkName = removeSuffix(linkName, CONTAINS_SUFFIX, &containsOnly);
-    linkName = removeSuffix(linkName, SHADOW_SUFFIX, &shadowOnly);
-    linkName = removeSuffix(linkName, BSPHERE_SUFFIX, &bsphereOnly);
-    linkName = removeSuffix(linkName, BBOX_SUFFIX, &bboxOnly);
-
-    if (!shadowOnly && !bsphereOnly && !bboxOnly)
-    {
-      if (this->perLinkContainsInflation.find(linkName) == this->perLinkContainsInflation.end())
-        this->perLinkContainsInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultContainsInflation.padding);
-      else
-        this->perLinkContainsInflation[linkName].scale = inflationPair.second;
-    }
-
-    if (!containsOnly && !bsphereOnly && !bboxOnly)
-    {
-      if (this->perLinkShadowInflation.find(linkName) == this->perLinkShadowInflation.end())
-        this->perLinkShadowInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultShadowInflation.padding);
-      else
-        this->perLinkShadowInflation[linkName].scale = inflationPair.second;
-    }
-
-    if (!containsOnly && !shadowOnly && !bboxOnly)
-    {
-      if (this->perLinkBsphereInflation.find(linkName) == this->perLinkBsphereInflation.end())
-        this->perLinkBsphereInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultBsphereInflation.padding);
-      else
-        this->perLinkBsphereInflation[linkName].scale = inflationPair.second;
-    }
-
-    if (!containsOnly && !shadowOnly && !bsphereOnly)
-    {
-      if (this->perLinkBboxInflation.find(linkName) == this->perLinkBboxInflation.end())
-        this->perLinkBboxInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultBboxInflation.padding);
-      else
-        this->perLinkBboxInflation[linkName].scale = inflationPair.second;
-    }
-  }
-
+  
+  this->computeLinkPaddingAndScale();
+  
   // can contain either whole link names, or scoped names of their collisions (i.e. "link::collision_1" or "link::my_collision")
   this->linksIgnoredInBoundingSphere = this->template getParamVerboseSet<string>("ignored_links/bounding_sphere");
   this->linksIgnoredInBoundingBox = this->template getParamVerboseSet<string>("ignored_links/bounding_box");
@@ -383,6 +315,86 @@ bool RobotBodyFilter<T>::configure() {
   this->timeConfigured = ros::Time::now();
 
   return true;
+}
+
+template<typename T>
+void RobotBodyFilter<T>::computeLinkPaddingAndScale() {
+  // read per-link padding
+  const auto perLinkInflationPadding = this->getParamVerboseMap("body_model/inflation/per_link/padding", std::map<std::string, double>(), "m");
+  for (const auto& inflationPair : perLinkInflationPadding)
+  {
+    bool containsOnly;
+    bool shadowOnly;
+    bool bsphereOnly;
+    bool bboxOnly;
+
+    auto linkName = inflationPair.first;
+    linkName = removeSuffix(linkName, CONTAINS_SUFFIX, &containsOnly);
+    linkName = removeSuffix(linkName, SHADOW_SUFFIX, &shadowOnly);
+    linkName = removeSuffix(linkName, BSPHERE_SUFFIX, &bsphereOnly);
+    linkName = removeSuffix(linkName, BBOX_SUFFIX, &bboxOnly);
+
+    if (!shadowOnly && !bsphereOnly && !bboxOnly)
+      this->perLinkContainsInflation[linkName] =
+          ScaleAndPadding(this->defaultContainsInflation.scale, inflationPair.second);
+    if (!containsOnly && !bsphereOnly && !bboxOnly)
+      this->perLinkShadowInflation[linkName] =
+          ScaleAndPadding(this->defaultShadowInflation.scale, inflationPair.second);
+    if (!containsOnly && !shadowOnly && !bboxOnly)
+      this->perLinkBsphereInflation[linkName] =
+          ScaleAndPadding(this->defaultBsphereInflation.scale, inflationPair.second);
+    if (!containsOnly && !shadowOnly && !bsphereOnly)
+      this->perLinkBboxInflation[linkName] =
+          ScaleAndPadding(this->defaultBboxInflation.scale, inflationPair.second);
+  }
+
+  // read per-link scale
+  const auto perLinkInflationScale = this->getParamVerboseMap("body_model/inflation/per_link/scale", std::map<std::string, double>());
+  for (const auto& inflationPair : perLinkInflationScale)
+  {
+    bool containsOnly;
+    bool shadowOnly;
+    bool bsphereOnly;
+    bool bboxOnly;
+
+    auto linkName = inflationPair.first;
+    linkName = removeSuffix(linkName, CONTAINS_SUFFIX, &containsOnly);
+    linkName = removeSuffix(linkName, SHADOW_SUFFIX, &shadowOnly);
+    linkName = removeSuffix(linkName, BSPHERE_SUFFIX, &bsphereOnly);
+    linkName = removeSuffix(linkName, BBOX_SUFFIX, &bboxOnly);
+
+    if (!shadowOnly && !bsphereOnly && !bboxOnly)
+    {
+      if (this->perLinkContainsInflation.find(linkName) == this->perLinkContainsInflation.end())
+        this->perLinkContainsInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultContainsInflation.padding);
+      else
+        this->perLinkContainsInflation[linkName].scale = inflationPair.second;
+    }
+
+    if (!containsOnly && !bsphereOnly && !bboxOnly)
+    {
+      if (this->perLinkShadowInflation.find(linkName) == this->perLinkShadowInflation.end())
+        this->perLinkShadowInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultShadowInflation.padding);
+      else
+        this->perLinkShadowInflation[linkName].scale = inflationPair.second;
+    }
+
+    if (!containsOnly && !shadowOnly && !bboxOnly)
+    {
+      if (this->perLinkBsphereInflation.find(linkName) == this->perLinkBsphereInflation.end())
+        this->perLinkBsphereInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultBsphereInflation.padding);
+      else
+        this->perLinkBsphereInflation[linkName].scale = inflationPair.second;
+    }
+
+    if (!containsOnly && !shadowOnly && !bsphereOnly)
+    {
+      if (this->perLinkBboxInflation.find(linkName) == this->perLinkBboxInflation.end())
+        this->perLinkBboxInflation[linkName] = ScaleAndPadding(inflationPair.second, this->defaultBboxInflation.padding);
+      else
+        this->perLinkBboxInflation[linkName].scale = inflationPair.second;
+    }
+  }
 }
 
 bool RobotBodyFilterLaserScan::configure() {
@@ -1883,6 +1895,16 @@ bool ScaleAndPadding::operator!=(const ScaleAndPadding& other) const
   return !(*this == other);
 }
 
+template<typename T>
+void RobotBodyFilter<T>::parameterReconfigureCallback(RobotBodyFilterConfig& config, uint32_t level)
+{
+  this->defaultContainsInflation.padding = config.padding;
+  this->defaultContainsInflation.scale = config.scale;
+  this->computeLinkPaddingAndScale();
+  std_srvs::TriggerRequest triggerRequest;
+  std_srvs::TriggerResponse triggerResponse;
+  this->triggerModelReload(triggerRequest, triggerResponse);
+}
 }
 
 PLUGINLIB_EXPORT_CLASS(robot_body_filter::RobotBodyFilterLaserScan, filters::FilterBase<sensor_msgs::LaserScan>)

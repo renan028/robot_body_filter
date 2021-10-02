@@ -35,6 +35,9 @@
 
 #include <robot_body_filter/TfFramesWatchdog.h>
 
+#include <dynamic_reconfigure/server.h>
+#include <robot_body_filter/RobotBodyFilterConfig.h>
+
 namespace robot_body_filter {
 /**
 * \brief Just a helper structure holding together a link, one of its collision elements,
@@ -195,6 +198,11 @@ protected:
   //! Inflation that is applied to a collision element for the purposes of computing the bounding box.
   //! Elements not present in this list are scaled and padded with defaultBboxInflation.
   std::map<std::string, ScaleAndPadding> perLinkBboxInflation;
+
+  //! Method to fill the scale and padding attributes for the purposes of checking if a point is contained by the
+  //! robot model (scale 1.0 = no scaling, padding 0.0 = no padding). Elements not present in this list are scaled and
+  //! padded with defaultContainsInflation.
+  void computeLinkPaddingAndScale();
 
   //! Name of the parameter where the robot model can be found.
   std::string robotDescriptionParam;
@@ -447,6 +455,12 @@ protected:
   ScaleAndPadding getLinkInflationForBoundingSphere(const std::vector<std::string>& linkNames) const;
   ScaleAndPadding getLinkInflationForBoundingBox(const std::string& linkName) const;
   ScaleAndPadding getLinkInflationForBoundingBox(const std::vector<std::string>& linkNames) const;
+
+  //! Dynamic rconfigure server and callback function
+  std::unique_ptr<dynamic_reconfigure::Server<RobotBodyFilterConfig>> server_;
+  dynamic_reconfigure::Server<RobotBodyFilterConfig>::CallbackType dyn_reconf_cb_;
+  void parameterReconfigureCallback(RobotBodyFilterConfig& config, uint32_t level);
+  boost::recursive_mutex config_mutex_;
 
 private:
   ScaleAndPadding getLinkInflation(const std::vector<std::string>& linkNames, const ScaleAndPadding& defaultInflation, const std::map<std::string, ScaleAndPadding>& perLinkInflation) const;

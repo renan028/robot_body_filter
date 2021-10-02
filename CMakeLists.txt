@@ -32,6 +32,10 @@ endforeach()
 add_message_files(FILES OrientedBoundingBox.msg OrientedBoundingBoxStamped.msg Sphere.msg SphereStamped.msg)
 generate_messages(DEPENDENCIES ${MESSAGE_DEPS})
 
+generate_dynamic_reconfigure_options(
+  cfg/RobotBodyFilter.cfg
+)
+
 catkin_package(
     CATKIN_DEPENDS ${THIS_PACKAGE_DEPS} ${MESSAGE_DEPS} message_runtime
     INCLUDE_DIRS include
