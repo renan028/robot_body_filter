@@ -461,8 +461,9 @@ protected:
   dynamic_reconfigure::Server<RobotBodyFilterConfig>::CallbackType dyn_reconf_cb_;
   void parameterReconfigureCallback(RobotBodyFilterConfig& config, uint32_t level);
   boost::recursive_mutex config_mutex_;
+  bool enable_;
 
-private:
+ private:
   ScaleAndPadding getLinkInflation(const std::vector<std::string>& linkNames, const ScaleAndPadding& defaultInflation, const std::map<std::string, ScaleAndPadding>& perLinkInflation) const;
 };
 
