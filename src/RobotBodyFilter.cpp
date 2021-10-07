@@ -41,7 +41,6 @@ namespace robot_body_filter
 template <typename T>
 RobotBodyFilter<T>::RobotBodyFilter()
         : privateNodeHandle("~")
-        , enable_(false)
 {
   this->modelMutex.reset(new std::mutex());
 }
@@ -111,6 +110,7 @@ bool RobotBodyFilter<T>::configure()
 
   const auto inflationPadding = this->getParamVerbose("body_model/inflation/padding", 0.0, "m");
   const auto inflationScale = this->getParamVerbose("body_model/inflation/scale", 1.0);
+  this->enable_ = this->getParamVerbose("body_model/inflation/enable", false);
   this->defaultContainsInflation.padding = this->getParamVerbose("body_model/inflation/contains_test/padding", inflationPadding, "m");
   this->defaultContainsInflation.scale = this->getParamVerbose("body_model/inflation/contains_test/scale", inflationScale);
   this->defaultShadowInflation.padding = this->getParamVerbose("body_model/inflation/shadow_test/padding", inflationPadding, "m");
