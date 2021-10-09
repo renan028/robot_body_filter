@@ -200,7 +200,7 @@ bool RobotBodyFilter<T>::configure()
   }
 
   if (this->publishDebugPclInside) {
-    this->debugPointCloudInsidePublisher = this->nodeHandle.template advertise<sensor_msgs::PointCloud2>("scan_point_cloud_inside", 100);
+    this->debugPointCloudInsidePublisher = this->nodeHandle.template advertise<sensor_msgs::PointCloud2>(name + "/scan_point_cloud_inside", 100);
   }
 
   if (this->publishDebugPclClip) {
