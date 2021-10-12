@@ -49,7 +49,7 @@ template <typename T>
 bool RobotBodyFilter<T>::configure()
 {
   std::string name = filters::FilterBase<T>::getName();
-  auto nh = ros::NodeHandle("~" + name + "/params/body_model/inflation");
+  auto nh = ros::NodeHandle("~" + name + "/params/body_model/inflation/contains_test");
   this->server_ = std::make_unique<dynamic_reconfigure::Server<RobotBodyFilterConfig>>(this->config_mutex_, nh);
   this->dyn_reconf_cb_ = boost::bind(&RobotBodyFilter<T>::parameterReconfigureCallback, this, _1, _2);
   this->server_->setCallback(this->dyn_reconf_cb_);
@@ -110,7 +110,7 @@ bool RobotBodyFilter<T>::configure()
 
   const auto inflationPadding = this->getParamVerbose("body_model/inflation/padding", 0.0, "m");
   const auto inflationScale = this->getParamVerbose("body_model/inflation/scale", 1.0);
-  this->enable_ = this->getParamVerbose("body_model/inflation/enable", false);
+  this->enable_ = this->getParamVerbose("body_model/inflation/contains_test/enable", false);
   this->defaultContainsInflation.padding = this->getParamVerbose("body_model/inflation/contains_test/padding", inflationPadding, "m");
   this->defaultContainsInflation.scale = this->getParamVerbose("body_model/inflation/contains_test/scale", inflationScale);
   this->defaultShadowInflation.padding = this->getParamVerbose("body_model/inflation/shadow_test/padding", inflationPadding, "m");
